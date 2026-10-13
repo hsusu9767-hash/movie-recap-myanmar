@@ -179,6 +179,7 @@ def get_duration(video_path):
         return None
 
 
+
 # -------------------------------
 # 1. YouTube link and transcript
 # -------------------------------
@@ -190,49 +191,98 @@ youtube_url = st.text_input(
     placeholder="https://www.youtube.com/watch?v=..."
 )
 
-transcript_language = st.selectbox(
-    "Transcript မူရင်းဘာသာစကား",
-    ["English", "မြန်မာ"],
-    key="transcript_language"
-)
-
-language_codes = {
-    "English": "en",
-    "မြန်မာ": "my"
-}
-
 col_a, col_b = st.columns(2)
 
 with col_a:
     if st.button("▶️ Preview YouTube", use_container_width=True):
         video_id = get_video_id(youtube_url.strip())
+
         if video_id:
             st.session_state["youtube_id"] = video_id
         else:
             st.error("YouTube Link မှန်ကန်စွာ ထည့်ပါ။")
 
 with col_b:
-    if st.button("📝 Get Transcript", use_container_width=True):
+    if st.button(
+        "🌍 ဗီဒီယိုဘာသာစကားအားလုံး ရှာပါ",
+        use_container_width=True
+    ):
         video_id = get_video_id(youtube_url.strip())
 
         if not video_id:
             st.error("YouTube Link မှန်ကန်စွာ ထည့်ပါ။")
         else:
             try:
-                with st.spinner("Transcript ရှာနေပါတယ်..."):
-                    text = get_transcript(
-                        video_id,
-                        language_codes[transcript_language]
+                with st.spinner("ဘာသာစကားစာရင်း ရှာနေပါတယ်..."):
+                    transcripts = list(
+                        YouTubeTranscriptApi().list(video_id)
                     )
-                st.session_state["transcript"] = text
-                st.success("Transcript ရရှိပါပြီ။")
+
+                    options = []
+                    seen_codes = set()
+
+                    # Original transcript languages
+                    for item in transcripts:
+                        code = item.language_code
+
+                        if code not in seen_codes:
+                            generated = (
+                                " (Auto-generated)"
+                                if item.is_generated else ""
+                            )
+
+                            options.append({
+                                "label": (
+                                    f"{item.language} [{code}]"
+                                    f"{generated}"
+                                ),
+                                "code": code,
+                                "source_code": code,
+                                "translated": False
+                            })
+
+                            seen_codes.add(code)
+
+                    # YouTube-supported translated languages
+                    for item in transcripts:
+                        if not item.is_translatable:
+                            continue
+
+                        for target in item.translation_languages:
+                            code = target["language_code"]
+
+                            if code not in seen_codes:
+                                options.append({
+                                    "label": (
+                                        f"{target['language']} [{code}]"
+                                        f" — Auto-translated"
+                                    ),
+                                    "code": code,
+                                    "source_code": item.language_code,
+                                    "translated": True
+                                })
+
+                                seen_codes.add(code)
+
+                    st.session_state["transcript_languages"] = options
+                    st.session_state["language_video_id"] = video_id
+
+                if options:
+                    st.success(
+                        f"ဘာသာစကား {len(options)} မျိုး ရရှိပါတယ်။"
+                    )
+                else:
+                    st.warning(
+                        "ဒီဗီဒီယိုမှာ ရနိုင်တဲ့ Transcript "
+                        "ဘာသာစကား မတွေ့ပါ။"
+                    )
+
             except Exception as error:
                 st.error(
-                    "Transcript မရရှိပါ။ Video မှာ Transcript မရှိခြင်း၊ "
-                    "ဘာသာစကားမကိုက်ညီခြင်း သို့မဟုတ် YouTube က "
-                    "ဝင်ရောက်မှုကို ကန့်သတ်ထားခြင်း ဖြစ်နိုင်ပါတယ်။"
+                    "ဘာသာစကားစာရင်း ရယူမရပါ။ "
+                    "ဒီဗီဒီယိုမှာ Transcript မရှိနိုင်ပါ။"
                 )
-                st.caption(str(error)[:400])
+                st.caption(str(error)[:500])
 
 if "youtube_id" in st.session_state:
     st.video(
@@ -240,61 +290,40 @@ if "youtube_id" in st.session_state:
         + st.session_state["youtube_id"]
     )
 
-# -------------------------------
-# 2. Recap script
-# -------------------------------
-
-st.header("2. Recap Script")
-
-if "transcript" in st.session_state:
-    if st.button("✨ Create Recap Draft"):
-        st.session_state["recap"] = make_recap(
-            st.session_state["transcript"]
-        )
-
-    with st.expander("View original transcript"):
-        st.text_area(
-            "Transcript",
-            value=st.session_state["transcript"],
-            height=180,
-            key="original_transcript_view"
-        )
-
-    if "recap" not in st.session_state:
-        st.session_state["recap"] = ""
-
-    st.caption(
-        "Draft ကို စစ်ဆေးပြင်ဆင်ပါ။ ဒီနည်းလမ်းက Transcript "
-        "ထဲက စာကြောင်းတွေကို ရွေးချယ်ပေးတာဖြစ်ပြီး AI က "
-        "ဇာတ်လမ်းအဓိပ္ပာယ်ကို အပြည့်အဝနားလည်ပြီး "
-        "ပြန်ရေးပေးတာ မဟုတ်ပါ။"
-    )
-
-    recap_script = st.text_area(
-        "Recap Script (လိုသလို ပြင်နိုင်သည်)",
-        key="recap",
-        height=220
-    )
-else:
-    recap_script = st.text_area(
-        "Transcript မရှိပါက Recap Script ကို ဒီမှာရေးပါ",
-        height=180
-    )
-
-st.download_button(
-    "⬇️ Download Recap Script",
-    data=recap_script,
-    file_name="recap_script.txt",
-    mime="text/plain",
-    disabled=not recap_script.strip()
+# Select a language from available captions/translations
+language_options = st.session_state.get(
+    "transcript_languages", []
 )
 
-# -------------------------------
-# 3. Voice and subtitle options
-# -------------------------------
+if language_options:
+    st.subheader("🌐 Video Transcript Language")
 
-st.header("3. Narration Voice")
+    selected_language = st.selectbox(
+        "ဗီဒီယိုရဲ့ ဘာသာစကား ရွေးပါ",
+        options=language_options,
+        format_func=lambda item: item["label"]
+    )
 
+    if st.button("📝 Get Transcript", use_container_width=True):
+        video_id = st.session_state.get("language_video_id")
+
+        try:
+            with st.spinner("Transcript ရယူနေပါတယ်..."):
+                text = get_transcript(
+                    video_id,
+                    selected_language
+                )
+
+            st.session_state["transcript"] = text
+            st.success("Transcript ရရှိပါပြီ။")
+
+        except Exception as error:
+            st.error(
+                "ဒီဘာသာစကားနဲ့ Transcript ရယူမရပါ။ "
+                "အခြားဘာသာစကားကို ရွေးပြီး ထပ်စမ်းပါ။"
+            )
+            st.caption(str(error)[:500])
+    
 voice_options = {
     "မြန်မာ - Nilar (Female)": "my-MM-NilarNeural",
     "မြန်မာ - Thiha (Male)": "my-MM-ThihaNeural",
