@@ -1,1 +1,4 @@
+streamlit
+youtube-transcript-api
+edge-tts
 
